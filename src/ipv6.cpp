@@ -130,14 +130,21 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
     uint32_t actual_payload_length = payload_length();
     bool is_payload_fragmented = false;
     while (stream) {
-        if (is_extension_header(current_header) && current_header != NO_NEXT_HEADER) {
+        // Host Identity Protocol (139) and Shim6 (140) use the generic extension header
+        // format (RFC 7045), so they are skipped like the other extension headers.
+        const bool is_hip_or_shim6 = current_header == 139 || current_header == 140;
+        if ((is_extension_header(current_header) || is_hip_or_shim6) && current_header != NO_NEXT_HEADER) {
             if (current_header == FRAGMENT) {
                 is_payload_fragmented = true;
             }
             const uint8_t ext_type = stream.read<uint8_t>();
-            // every ext header is at least 8 bytes long
-            // minus one, from the next_header field.
-            const uint32_t ext_size = (static_cast<uint32_t>(stream.read<uint8_t>()) + 1) * 8;
+            const uint32_t length_field = stream.read<uint8_t>();
+            // The Authentication Header length is in 4-byte units, minus 2 (RFC 4302).
+            // Every other ext header is at least 8 bytes long and its length is in
+            // 8-byte units, not including the first 8 bytes.
+            const uint32_t ext_size = current_header == AUTHENTICATION
+                ? (length_field + 2) * 4
+                : (length_field + 1) * 8;
             const uint32_t payload_size = ext_size - sizeof(uint8_t) * 2;
             if (!stream.can_read(payload_size)) {
                 throw malformed_packet();
