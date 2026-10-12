@@ -134,25 +134,32 @@ IP::IP(const uint8_t* buffer, uint32_t total_sz) {
 
         // Don't try to decode it if it's fragmented
         if (!is_fragmented()) {
-            inner_pdu(
-                Internals::pdu_from_flag(
-                    static_cast<Constants::IP::e>(header_.protocol),
-                    stream.pointer(), 
-                    total_sz,
-                    false
-                )
-            );
-            if (!inner_pdu()) {
+            try {
                 inner_pdu(
-                    Internals::allocate<IP>(
-                        header_.protocol,
+                    Internals::pdu_from_flag(
+                        static_cast<Constants::IP::e>(header_.protocol),
                         stream.pointer(), 
-                        total_sz
+                        total_sz,
+                        false
                     )
                 );
                 if (!inner_pdu()) {
-                    inner_pdu(new RawPDU(stream.pointer(), total_sz));
+                    inner_pdu(
+                        Internals::allocate<IP>(
+                            header_.protocol,
+                            stream.pointer(), 
+                            total_sz
+                        )
+                    );
+                    if (!inner_pdu()) {
+                        inner_pdu(new RawPDU(stream.pointer(), total_sz));
+                    }
                 }
+            }
+            catch (const malformed_packet&) {
+                // The payload is too short for the header of the protocol it carries, for
+                // example because the packet was cut by the snapshot length of a capture,
+                // so the packet is dissected up to the IP header only.
             }
         }
         else {

@@ -147,7 +147,9 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
                 : (length_field + 1) * 8;
             const uint32_t payload_size = ext_size - sizeof(uint8_t) * 2;
             if (!stream.can_read(payload_size)) {
-                throw malformed_packet();
+                // The header was cut by the snapshot length of a capture: what it points
+                // to was not captured, so it is the last header that is known.
+                break;
             }
             // Add a header using the current header type (e.g. what we saw as the next
             // header type in the previous)
@@ -176,32 +178,41 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
             stream.skip(payload_size);
         }
         else {
+            // The payload of a packet cut by the snapshot length of a capture is shorter
+            // than the advertised length, so only its captured part is dissected.
             if (!stream.can_read(actual_payload_length)) {
-                throw malformed_packet();
+                actual_payload_length = static_cast<uint32_t>(stream.size());
             }
             if (is_payload_fragmented) {
                 inner_pdu(new Tins::RawPDU(stream.pointer(), actual_payload_length));
             }
             else {
-                inner_pdu(
-                    Internals::pdu_from_flag(
-                        static_cast<Constants::IP::e>(current_header),
-                        stream.pointer(), 
-                        actual_payload_length,
-                        false
-                    )
-                );
-                if (!inner_pdu()) {
+                try {
                     inner_pdu(
-                        Internals::allocate<IPv6>(
-                            current_header,
+                        Internals::pdu_from_flag(
+                            static_cast<Constants::IP::e>(current_header),
                             stream.pointer(), 
-                            actual_payload_length
+                            actual_payload_length,
+                            false
                         )
                     );
                     if (!inner_pdu()) {
-                        inner_pdu(new Tins::RawPDU(stream.pointer(), actual_payload_length));
+                        inner_pdu(
+                            Internals::allocate<IPv6>(
+                                current_header,
+                                stream.pointer(), 
+                                actual_payload_length
+                            )
+                        );
+                        if (!inner_pdu()) {
+                            inner_pdu(new Tins::RawPDU(stream.pointer(), actual_payload_length));
+                        }
                     }
+                }
+                catch (const malformed_packet&) {
+                    // The payload is too short for the header of the protocol it carries, for
+                    // example because the packet was cut by the snapshot length of a capture,
+                    // so the packet is dissected up to the IPv6 header only.
                 }
             }
             // We got to an actual PDU, we're done
