@@ -129,14 +129,15 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
     uint8_t current_header = header_.next_header;
     uint32_t actual_payload_length = payload_length();
     bool is_payload_fragmented = false;
+    // The headers after the Fragment header of a non-first fragment are present only in the
+    // first fragment (RFC 8200, section 4.5), so what follows it is fragment data.
+    bool is_non_first_fragment = false;
     while (stream) {
         // Host Identity Protocol (139) and Shim6 (140) use the generic extension header
         // format (RFC 7045), so they are skipped like the other extension headers.
         const bool is_hip_or_shim6 = current_header == 139 || current_header == 140;
-        if ((is_extension_header(current_header) || is_hip_or_shim6) && current_header != NO_NEXT_HEADER) {
-            if (current_header == FRAGMENT) {
-                is_payload_fragmented = true;
-            }
+        if (!is_non_first_fragment
+            && (is_extension_header(current_header) || is_hip_or_shim6) && current_header != NO_NEXT_HEADER) {
             const uint8_t ext_type = stream.read<uint8_t>();
             const uint32_t length_field = stream.read<uint8_t>();
             // The Authentication Header length is in 4-byte units, minus 2 (RFC 4302).
@@ -150,6 +151,12 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
                 // The header was cut by the snapshot length of a capture: what it points
                 // to was not captured, so it is the last header that is known.
                 break;
+            }
+            if (current_header == FRAGMENT) {
+                is_payload_fragmented = true;
+                // The fragment offset is in the upper 13 bits of the first two bytes.
+                const uint8_t* fragment_data = stream.pointer();
+                is_non_first_fragment = ((fragment_data[0] << 8) | fragment_data[1]) >> 3 != 0;
             }
             // Add a header using the current header type (e.g. what we saw as the next
             // header type in the previous)

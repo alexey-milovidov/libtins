@@ -109,11 +109,9 @@ IP::IP(const uint8_t* buffer, uint32_t total_sz) {
             }
         }
         else if (opt_type == END) {
-            // If the end option found, we're done
-            if (TINS_UNLIKELY(stream.pointer() != options_end)) {
-                // Make sure we found the END option at the end of the options list
-                throw malformed_packet();
-            }
+            // The end of the options list may be followed by padding up to the end of the
+            // header (RFC 791, section 3.1), so skip it.
+            stream.skip(options_end - stream.pointer());
             break;
         }
         else {
