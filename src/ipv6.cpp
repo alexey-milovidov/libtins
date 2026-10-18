@@ -128,7 +128,6 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
     stream.read(header_);
     uint8_t current_header = header_.next_header;
     uint32_t actual_payload_length = payload_length();
-    bool is_payload_fragmented = false;
     // The headers after the Fragment header of a non-first fragment are present only in the
     // first fragment (RFC 8200, section 4.5), so what follows it is fragment data.
     bool is_non_first_fragment = false;
@@ -153,7 +152,6 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
                 break;
             }
             if (current_header == FRAGMENT) {
-                is_payload_fragmented = true;
                 // The fragment offset is in the upper 13 bits of the first two bytes.
                 const uint8_t* fragment_data = stream.pointer();
                 is_non_first_fragment = ((fragment_data[0] << 8) | fragment_data[1]) >> 3 != 0;
@@ -190,7 +188,9 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
             if (!stream.can_read(actual_payload_length)) {
                 actual_payload_length = static_cast<uint32_t>(stream.size());
             }
-            if (is_payload_fragmented) {
+            // Only the first fragment (offset 0) starts with the header of the protocol
+            // it carries, so the other fragments are kept as raw data.
+            if (is_non_first_fragment) {
                 inner_pdu(new Tins::RawPDU(stream.pointer(), actual_payload_length));
             }
             else {

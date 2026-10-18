@@ -130,8 +130,9 @@ IP::IP(const uint8_t* buffer, uint32_t total_sz) {
             total_sz = stream.size();
         }
 
-        // Don't try to decode it if it's fragmented
-        if (!is_fragmented()) {
+        // Only the first fragment (offset 0) starts with the header of the protocol it
+        // carries, so the other fragments are kept as raw data.
+        if (fragment_offset() == 0) {
             try {
                 inner_pdu(
                     Internals::pdu_from_flag(
@@ -161,7 +162,7 @@ IP::IP(const uint8_t* buffer, uint32_t total_sz) {
             }
         }
         else {
-            // It's fragmented, just use RawPDU
+            // A non-first fragment, just use RawPDU
             inner_pdu(new RawPDU(stream.pointer(), total_sz));
         }
     }
