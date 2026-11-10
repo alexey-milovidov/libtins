@@ -137,6 +137,11 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
         const bool is_hip_or_shim6 = current_header == 139 || current_header == 140;
         if (!is_non_first_fragment
             && (is_extension_header(current_header) || is_hip_or_shim6) && current_header != NO_NEXT_HEADER) {
+            if (!stream.can_read(2)) {
+                // The `next header` and length fields were cut by the snapshot length of a
+                // capture, so the header is the last one that is known.
+                break;
+            }
             const uint8_t ext_type = stream.read<uint8_t>();
             const uint32_t length_field = stream.read<uint8_t>();
             // The Authentication Header length is in 4-byte units, minus 2 (RFC 4302).
@@ -172,7 +177,7 @@ IPv6::IPv6(const uint8_t* buffer, uint32_t total_sz) {
                         if (opt_size != 4) {
                             throw malformed_packet();
                         }
-                        actual_payload_length = stream.read_be<uint32_t>();
+                        actual_payload_length = options.read_be<uint32_t>();
                         break;
                     }
                     options.skip(opt_size);
